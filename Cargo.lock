@@ -786,6 +786,7 @@ dependencies = [
  "clap",
  "env_logger",
  "fs_extra",
+ "log",
  "mdbook",
  "regex",
  "serde_json",

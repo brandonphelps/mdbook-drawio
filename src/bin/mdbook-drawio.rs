@@ -1,19 +1,15 @@
 #![feature(absolute_path)]
 
 use std::io;
-use std::path::PathBuf;
 use clap::{Command, Arg, ArgMatches, crate_version};
 use mdbook::errors::Error;
-use mdbook::{MDBook, BookItem};
 use mdbook::preprocess::{CmdPreprocessor, Preprocessor};
-use tempfile::tempdir;
 
 use mdbook_drawio::DrawIo;
 
-use fs_extra::dir::CopyOptions;
 
+/*
 fn old_main() {
-    let regex = regex::Regex::new(r"!\[.*\]\((.*.drawio)\)").unwrap();
 
     let matches = clap::Command::new("mdbook-drawio")
         // todo: use cargo feature. 
@@ -22,7 +18,10 @@ fn old_main() {
         .arg(clap::Arg::new("output-dir"))
         .get_matches();
 
-    let book_root: PathBuf = matches.value_of("book-path").expect("did specify boot root").into();
+    let book_root: PathBuf = matches
+        .value_of("book-path")
+        .expect("did specify boot root").into();
+
     let out_dir: PathBuf = matches.value_of("output-dir")
         .map_or(tempdir().unwrap().into_path(), |f| f.into());
 
@@ -45,7 +44,8 @@ fn old_main() {
     //     links to drawio diagrams.
     // do analysis to determine if generating the book is possible.
     //     check for 
-
+*/
+    /*
     book.book.for_each_mut(|chapter: &mut BookItem| {
         match chapter { 
             BookItem::Chapter(ref mut c) => {
@@ -84,8 +84,9 @@ fn old_main() {
     book.config.build.build_dir = output_build_dir;
     book.build().unwrap();
     println!("Hello, world!");
-}
 
+}
+    */
 fn make_app() -> clap::Command<'static> {
     Command::new("mdbook-drawio")
         .version(crate_version!())
