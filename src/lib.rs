@@ -37,20 +37,22 @@ impl Preprocessor for DrawIo {
     }
 }
 
+/// transforms a chapters content extracting drawio links
+/// to be exported. 
 // vector of links that are to be used for exporting.
 // new content page. 
 fn replace_links(content: &str) -> Result<(Vec<String>, String)> {
     let regex_v = Regex::new(r"(!\[.*\])\((.*)-(.*)(\.drawio)\)").unwrap();
     let mut links = vec![];
 
-    let result = regex_v.replace(content, |caps: &Captures| {
-        log::debug!("Blah blah {:?}", caps);
+    let result = regex_v.replace_all(content, |caps: &Captures| {
         let md_link = caps.get(1).unwrap().as_str();
-        log::debug!("leading link: {}", md_link);
         let diagram_name = caps.get(2).unwrap().as_str();
         let page_name = caps.get(3).unwrap().as_str();
         let ext_name = caps.get(4).unwrap().as_str();
+        // todo: could have this get deteremined by option 
         let new_ext_name = ".svg";
+        log::debug!("leading link: {}", md_link);
         log::debug!("{} {}", "name of diagram: ", diagram_name);
         log::debug!("{} {}", "name of page: ", page_name);
         log::debug!("{} {}", "name of extension: ", ext_name);
@@ -65,13 +67,23 @@ fn replace_links(content: &str) -> Result<(Vec<String>, String)> {
 
 impl DrawIo {
     fn add_diagram(chapter: &mut Chapter) -> Result<String> {
-        Ok(chapter.content.clone())
+        let updated_content = replace_links(&chapter.content)?;
+        log::debug!("exporting the following draw-io images");
+        log::debug!("{:?}", updated_content.0);
+
+        // todo: produce warnings / errors if diagrams won't generate
+        // nice links,
+        // suchas if a page has #@$! in its name, on linus
+        // the name would end up with 'diagram-#@$!' and thus not be diretly
+        // ref able. 
+        
+        log::debug!("updated content: {:?}", updated_content.1);
+        Ok(updated_content.1)
     }
 }
 
 #[cfg(test)]
 mod tests {
-
 
     use super::*;
 
@@ -94,6 +106,29 @@ blkafjaklfj
         assert_eq!(new_content.0, vec!["blah.drawio"]);
         assert_eq!(new_content.1, expected_content);
     }
+
+    #[test]
+    fn test_link_extraction_mutli() {
+        let content = r#"
+hello world
+![blahalala](blah-page1.drawio)
+![blahalala](diagram-Woooo.drawio)
+blkafjaklfj
+"#;
+
+        let expected_content = r#"
+hello world
+![blahalala](blah-page1.svg)
+![blahalala](diagram-Woooo.svg)
+blkafjaklfj
+"#;
+
+        let new_content = replace_links(content).unwrap();
+
+        assert_eq!(new_content.0, vec!["blah.drawio", "diagram.drawio"]);
+        assert_eq!(new_content.1, expected_content);
+    }
+
 }
 
 
