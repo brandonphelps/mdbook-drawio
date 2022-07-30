@@ -1,7 +1,9 @@
 #![feature(absolute_path)]
 
+use std::io;
 use std::path::PathBuf;
 use clap::{Command, Arg, ArgMatches, crate_version};
+use mdbook::errors::Error;
 use mdbook::{MDBook, BookItem};
 use mdbook::preprocess::{CmdPreprocessor, Preprocessor};
 use tempfile::tempdir;
@@ -114,7 +116,22 @@ fn handle_supports(sub_args: &ArgMatches) -> ! {
 }
 
 
+fn handle_preprocessing() -> Result<(), Error> {
+    let (ctx, book) = CmdPreprocessor::parse_input(io::stdin())?;
 
+    if ctx.mdbook_version != mdbook::MDBOOK_VERSION {
+        eprintln!(
+            "Warning: the mdbook-drawio preprocessor was built against version \
+             {} of mdbook, but we're being called from version {}",
+            mdbook::MDBOOK_VERSION,
+            ctx.mdbook_version
+        );
+    }
+
+    let processed_book = DrawIo.run(&ctx, book)?;
+    serde_json::to_writer(io::stdout(), &processed_book)?;
+    Ok(())
+}
 
 fn main() {
     env_logger::init_from_env(env_logger::Env::default().default_filter_or("info"));

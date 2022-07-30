@@ -788,6 +788,7 @@ dependencies = [
  "fs_extra",
  "mdbook",
  "regex",
+ "serde_json",
  "tempfile",
  "walkdir",
 ]
