@@ -1,23 +1,16 @@
 #![feature(absolute_path)]
 
 use std::path::PathBuf;
+use clap::{Command, Arg, ArgMatches, crate_version};
 use mdbook::{MDBook, BookItem};
+use mdbook::preprocess::{CmdPreprocessor, Preprocessor};
 use tempfile::tempdir;
+
+use mdbook_drawio::DrawIo;
 
 use fs_extra::dir::CopyOptions;
 
-struct DrawIOConvert {
-    /// Path to where the drawio diagram is referenced.
-    // relative to the root of the book.
-    link: String, 
-
-    /// Page entry, indicate which page of the
-    /// drawio diagram is to be replaced. 
-    page: String, 
-}
-
-fn main() {
-
+fn old_main() {
     let regex = regex::Regex::new(r"!\[.*\]\((.*.drawio)\)").unwrap();
 
     let matches = clap::Command::new("mdbook-drawio")
@@ -33,15 +26,16 @@ fn main() {
 
     println!("copying to: {:?}", out_dir.to_str().unwrap());
 
-    // todo: get base path of book_root.
+    // book_root = /home/brandon/projects/rust/address_space/docs
+    // out_Dir = /tmp/.tmp73V2lm/
     let actual_out = out_dir.join(PathBuf::from(book_root.file_name().unwrap()));
-
+    // actual_out = out_dir / docs. 
     println!("Actual out: {:?}", actual_out.to_str().unwrap());
 
     let mut options = CopyOptions::new();
     options.copy_inside = false;
     fs_extra::dir::copy(&book_root.join("."), &out_dir, &options).unwrap();
-    let book = MDBook::load(&actual_out).unwrap();
+    let mut book = MDBook::load(&actual_out).unwrap();
 
     // copy the mdbook to a temporary output directory,
     // load up the mdbook pointing at the new output directory.
@@ -50,9 +44,9 @@ fn main() {
     // do analysis to determine if generating the book is possible.
     //     check for 
 
-    for chapter in book.iter() {
+    book.book.for_each_mut(|chapter: &mut BookItem| {
         match chapter { 
-            BookItem::Chapter(c) => {
+            BookItem::Chapter(ref mut c) => {
                 for entry in regex.captures_iter(&c.content){
                     println!("Base: {:?}", entry);
                     println!("Entry: '{:?}'", entry.get(1).unwrap().as_str());
@@ -72,13 +66,80 @@ fn main() {
                     } else {
                         println!("Found an entry {:?}", full_path.as_os_str());
                     }
-
                 }
+                c.content = "hello world".to_string();
             } 
             _ => { }
         }
-    }
+    });
 
+    // todo: check if user provides an output directory via toml file. 
 
+    let output_build_dir = std::path::absolute(book_root.join("book")).unwrap();
+
+    println!("Building dir: {:?}", book.config.build.build_dir);
+    println!("building at: {:?}", output_build_dir.to_str().unwrap());
+    book.config.build.build_dir = output_build_dir;
+    book.build().unwrap();
     println!("Hello, world!");
 }
+
+fn make_app() -> clap::Command<'static> {
+    Command::new("mdbook-drawio")
+        .version(crate_version!())
+        .about("mdbook preprocessor to add draw io support")
+        .subcommand(
+            Command::new("supports")
+                .arg(Arg::new("renderer").required(true))
+                .about("Check whether a renderer is supported by this preprocessor"),
+        )
+        .subcommand(
+            Command::new("install")
+                .arg(Arg::new("dir")
+                     .default_value(".")
+                     .help("Root directory for the book,\nshould contain the configuration file (`book.toml`)"))
+                .about("Install the required asset files and include it in the config"),
+        )
+}
+
+fn handle_supports(sub_args: &ArgMatches) -> ! {
+    let renderer = sub_args.value_of("renderer").expect("Required argument");
+    let supported = DrawIo.supports_renderer(renderer);
+
+    if supported {
+        std::process::exit(0);
+    } else {
+        std::process::exit(1);
+    }
+}
+
+
+
+
+fn main() {
+    env_logger::init_from_env(env_logger::Env::default().default_filter_or("info"));
+
+    let matches = make_app().get_matches();
+
+    if let Some(sub_args) = matches.subcommand_matches("supports") {
+        handle_supports(sub_args);
+    } else if let Err(e) = handle_preprocessing() {
+        eprintln!("{}", e);
+        std::process::exit(1);
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

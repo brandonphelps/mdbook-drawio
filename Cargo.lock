@@ -784,10 +784,12 @@ name = "mdbook-drawio"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "env_logger",
  "fs_extra",
  "mdbook",
  "regex",
  "tempfile",
+ "walkdir",
 ]
 
 [[package]]
