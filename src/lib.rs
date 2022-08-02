@@ -88,45 +88,62 @@ fn relative_path(path: impl AsRef<Path>, start: impl AsRef<Path>) -> std::io::Re
     let start_p_str = start_p.to_str().unwrap();
     let path_p_str = path_p.to_str().unwrap();
     // todo: determine if there is an os.seperator()
-    let start_p_split = start_p_str.split("/").peekable();
-    let path_p_split = path_p_str.split("/").peekable();
+    let mut start_p_split = start_p_str.split("/").peekable();
+    let mut path_p_split = path_p_str.split("/").peekable();
 
     let mut uncommon_parts: Vec<String> = vec![];
 
-    println!("Start p");
+    // 
+    // path: /hello/world/i/like
+    // start: /hello/world
+    // result: i/like
+    
+    // 
+    // path: /hello/world/
+    // start: /hello/world/i/like
+    // result: ../..
+
+    // 
+    // path: /hello/world/hello/world
+    // start: /hello/world/i/like
+    // result: ../../hello/world
+
+    // seems completely uncessary to perform all this path manip stuff.
+    let mut start_n = start_p_split.next();
+    let mut path_n = path_p_split.next();
+
     // is zip useless? how to do this functionally? 
     loop { 
-        let start_n = start_p_split.next();
-        let path_n = path_p_split.next();
+        start_n = start_p_split.next();
+        path_n = path_p_split.next();
 
-        // hit the end of the start path, thus we just need to accumlate the end paths
-        if start_n.is_none() {
-            
-        }
-
-        if path_n.is_none() {
-            
-        }
-
-        println!("{:?}", s);
+        if start_n != path_n || start_n.is_none() || path_n.is_none() {
+            break;
+        } 
     }
 
-    start_p_split.peek();
+    if let Some(n) = start_n {
+        uncommon_parts.push("..".to_string());
+    }        
 
-
-    /*
-    if start_p_.peek().is_none() {
-        println!("Start is empty");
+    while let Some(start_n) = start_p_split.next() {
+        uncommon_parts.push("..".to_string());
     }
 
-    if path_p_split.peek().is_none() {
-        println!("path is empty");
-}
-    */
+    if let Some(n) = path_n {
+        uncommon_parts.push(n.to_string());
+    }        
 
-    
-    
-    todo!()
+    while let Some(path_n) = path_p_split.next() {
+        uncommon_parts.push(path_n.to_string());
+    }
+
+    if uncommon_parts.is_empty() {
+        uncommon_parts.push(String::from("."));
+    }
+    let result = uncommon_parts.join("/");
+    let result_path = PathBuf::from(result).clean();
+    Ok(result_path)
 }
 
 
@@ -256,8 +273,34 @@ blkafjaklfj
     #[test]
     fn relative_path_testing() {
         let path = "hello/world";
-        let cur_p = "hello";
-        assert_eq!(relative_path(path, cur_p).unwrap(), PathBuf::from("world"));
+        let cur_p = "hello/world/blah/balh";
+
+        let expected_result = PathBuf::from("../../");
+        assert_eq!(relative_path(path, cur_p).unwrap(), expected_result);
+
+        let path = "hello/world/balh";
+        let cur_p = "hello/world/blah/balh";
+
+        let expected_result = PathBuf::from("../../balh");
+        assert_eq!(relative_path(path, cur_p).unwrap(), expected_result);
+
+        let path = "hello/world/balh/jojo/bizaar";
+        let cur_p = "hello/world/blah/balh";
+
+        let expected_result = PathBuf::from("../../balh/jojo/bizaar");
+        assert_eq!(relative_path(path, cur_p).unwrap(), expected_result);
+
+        let path = "hello/jojo/bizaar";
+        let cur_p = "hello/world/blah/balh";
+
+        let expected_result = PathBuf::from("../../../jojo/bizaar");
+        assert_eq!(relative_path(path, cur_p).unwrap(), expected_result);
+
+        let path = "jojo/hello";
+        let cur_p = "hello/world/blah/balh";
+
+        let expected_result = PathBuf::from("../../../../jojo/hello");
+        assert_eq!(relative_path(path, cur_p).unwrap(), expected_result);
     }
 }
 
