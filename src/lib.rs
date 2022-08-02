@@ -150,29 +150,26 @@ fn relative_path(path: impl AsRef<Path>, start: impl AsRef<Path>) -> std::io::Re
 
 impl DrawIo {
     fn add_diagram(root_dir: &PathBuf, chapter: &mut Chapter) -> Result<String> {
-        log::info!("Processing dir: {}", root_dir.to_str().unwrap());
+        // root points to the path of book.toml directory.
+        log::info!("\n\nProcessing dir: {}", root_dir.to_str().unwrap());
         log::info!("Processing chapter: {}", chapter.name);
 
-        // book root dir is always "."
-        // all content is relative to the SUMMARY.md file and hence
-        // thus each file a chapter refers to is then located at either "." or w/e the parent dir is.
-        let current_dir = std::env::current_dir().unwrap();
-        let chapter_path = chapter.source_path.as_ref().unwrap().clone();
+        // book root dir is always "."  all content is relative to the
+        // SUMMARY.md file and hence thus each file a chapter refers
+        // to is then located at either "." or w/e the parent dir is.
+
+        let chapter_path = PathBuf::from("src").join(chapter.source_path.as_ref().unwrap());
+        log::debug!("Chapter path: {:?}", chapter_path.to_str().unwrap());
+        assert!(chapter_path.is_file());
         let chapter_parent = chapter_path.parent().unwrap();
+
         let chapter_abs_path = absolute_path(&chapter_path).unwrap();
+        log::debug!("Abs path: {:?}", chapter_abs_path.to_str().unwrap());
         let chapter_dir = chapter_abs_path.parent().unwrap();
-        // let relative_path = RelativePathBuf::from_path(&current_dir).unwrap();
-        //let new_path = relative_path.to_path(&chapter_abs_path);
-        log::debug!("Current dir: {:?}", current_dir.to_str().unwrap());
-        log::debug!("Chapter absolute path: {:?}", chapter_abs_path.to_str().unwrap());
-        log::debug!("Chapter directory: {:?}", chapter_dir.to_str().unwrap());
-        //log::debug!("Rela: {:?}", relative_path.to_string());
-        //log::debug!("new: {:?}", new_path.to_str());
-        
-        
+
+        log::debug!("chapter directory: {:?}", chapter_dir.to_str().unwrap());
+
         let updated_content = replace_links(&chapter.content)?;
-        log::debug!("exporting the following draw-io images");
-        log::debug!("{:?}", updated_content.0);
 
         // todo: produce warnings / errors if diagrams won't generate
         // nice links,
@@ -180,15 +177,19 @@ impl DrawIo {
         // the name would end up with 'diagram-#@$!' and thus not be diretly
         // ref able. 
 
-        // docker run -v$(pwd):/data rlespinasse/drawio-export src/diagram.drawio --output . --format svg
+        // docker run -v$(pwd):/data rlespinasse/drawio-export
+        // src/diagram.drawio --output . --format svg
         for diagrams in updated_content.0.iter() {
             // for some reason the output is relative to the file being built???
             log::debug!("diagrams: {:?}", diagrams);
-            let diagram_path = chapter_parent.join(diagrams).clean();
-            log::debug!("@@digram path: {:?}", diagram_path.to_str().unwrap());
-            // log::debug!("docker digram path: {:?}", docker_diagram_path.to_str().unwrap());
-            let args = ["run", "-v$(pwd):/data", "rlespinasse/drawio-export", "--output", ".",
-                        "--format", "svg", &format!("src/{}", diagrams)];
+            let diagram_path = chapter_dir.join(diagrams).clean();
+            let rel_diagram_path = relative_path(&diagram_path, &root_dir).unwrap();
+            assert!(rel_diagram_path.is_file());
+            let rel_output_dir = relative_path(".", &rel_diagram_path).unwrap();
+            let args = ["run", "-v$(pwd):/data", "rlespinasse/drawio-export", "--output",
+                        ".",
+                        // rel_output_dir.to_str().unwrap(),
+                        "--format", "svg", rel_diagram_path.to_str().unwrap()];
             log::debug!("Command: {} {:?}", "docker", args.join(" "));
             let output = process::Command::new("docker")
                 .args(&args)
