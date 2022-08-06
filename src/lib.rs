@@ -154,7 +154,9 @@ impl DrawIo {
         log::info!("\n\nProcessing dir: {}", root_dir.to_str().unwrap());
         log::info!("Processing chapter: {}", chapter.name);
 
-        // book root dir is always "."  all content is relative to the
+        log::debug!("Current dir: {:?}", std::env::current_dir().unwrap().to_str().unwrap());
+
+        // book root dir is always "."  all content is relative to thel
         // SUMMARY.md file and hence thus each file a chapter refers
         // to is then located at either "." or w/e the parent dir is.
 
@@ -184,13 +186,28 @@ impl DrawIo {
             log::debug!("diagrams: {:?}", diagrams);
             let diagram_path = chapter_dir.join(diagrams).clean();
             let rel_diagram_path = relative_path(&diagram_path, &root_dir).unwrap();
+            log::debug!("Rel diagram path: {:?}", rel_diagram_path.to_str().unwrap());
             assert!(rel_diagram_path.is_file());
+            let mut chhiter = rel_diagram_path.components().peekable();
+            // skip the src dir. 
+            chhiter.next();
             let rel_output_dir = relative_path(".", &rel_diagram_path).unwrap();
-            let args = ["run", "-v$(pwd):/data", "rlespinasse/drawio-export", "--output",
-                        ".",
-                        // rel_output_dir.to_str().unwrap(),
+            log::debug!("initial output dir: {:?}", rel_output_dir);
+            let rel_output_dir = rel_output_dir.parent().unwrap();
+            let mut rel_output_dir_b = rel_output_dir.join("book");
+            while let Some(f) = chhiter.next() {
+                if chhiter.peek().is_none() {
+                    break;
+                }
+                log::debug!("@@ adding component :{:?}", f);
+                rel_output_dir_b = rel_output_dir_b.join(f);
+            }
+            log::debug!("Actual rel output: {:?}", rel_output_dir_b.to_str().unwrap());
+            let args = ["run", "-v$(pwd):/data", "rlespinasse/drawio-export",
+                        "--output",
+                        rel_output_dir_b.to_str().unwrap(),
                         "--format", "svg", rel_diagram_path.to_str().unwrap()];
-            log::debug!("Command: {} {:?}", "docker", args.join(" "));
+            log::debug!("Command: {} {}", "docker", args.join(" "));
             let output = process::Command::new("docker")
                 .args(&args)
                 .output();
