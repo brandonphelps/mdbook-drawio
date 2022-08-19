@@ -1,5 +1,3 @@
-#![feature(absolute_path)]
-
 use std::io;
 use clap::{Command, Arg, ArgMatches, crate_version};
 use mdbook::errors::Error;
@@ -68,16 +66,28 @@ fn main() {
 }
 
 
+// fn main(){
+//     env_logger::init_from_env(env_logger::Env::default().default_filter_or("info"));
 
+//     let matches = Command::new("hello")
+//         .arg(Arg::new("drawio-digram"))
+//         .arg(Arg::new("output"))
+//         .get_matches();
 
+//     let diagram_path: PathBuf = matches.value_of("drawio-digram").unwrap().into();
+//     let output_dir: PathBuf = matches.value_of("output").unwrap().into();
 
+//     let args = [diagram_path.to_str().unwrap(),
+//                 "--output", ".",
+//                 "--output-mode", "absolute"];
+//     log::debug!("drawio-exporter.exe {}", args.join(" "));
+    
+//     let output = process::Command::new("drawio-exporter.exe")
+//         .args(&args)
+//         .output();
 
-
-
-
-
-
-
-
-
-
+//     match output {
+//         Ok(r) => { println!("Success: {:?}", r) },
+//         Err(f) => { println!("Failrue: {:?}", f) }
+//     };
+// }

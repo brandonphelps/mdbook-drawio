@@ -3,6 +3,7 @@ use mdbook::book::{Book, BookItem, Chapter};
 use mdbook::errors::Result;
 use mdbook::preprocess::{Preprocessor, PreprocessorContext};
 use std::process;
+use std::collections::HashMap;
 
 use path_clean::PathClean;
 use relative_path::RelativePathBuf;
@@ -154,23 +155,25 @@ impl DrawIo {
         log::info!("\n\nProcessing dir: {}", root_dir.to_str().unwrap());
         log::info!("Processing chapter: {}", chapter.name);
 
-        log::debug!("Current dir: {:?}", std::env::current_dir().unwrap().to_str().unwrap());
+        log::debug!("Current dir: {:?}",
+                    std::env::current_dir().unwrap().to_str().unwrap());
 
         // book root dir is always "."  all content is relative to thel
         // SUMMARY.md file and hence thus each file a chapter refers
         // to is then located at either "." or w/e the parent dir is.
 
-        let chapter_path = PathBuf::from("src").join(chapter.source_path.as_ref().unwrap());
-        log::debug!("Chapter path: {:?}", chapter_path.to_str().unwrap());
-        assert!(chapter_path.is_file());
-        let chapter_parent = chapter_path.parent().unwrap();
+        let chapter_path = chapter.source_path.as_ref().unwrap().to_path_buf();
+        // log::debug!("Chapter path: {:?}", chapter_path.to_str().unwrap());
+        // assert!(chapter_path.is_file());
+        // let chapter_dir = chapter_path.parent().unwrap();
 
-        let chapter_abs_path = absolute_path(&chapter_path).unwrap();
-        log::debug!("Abs path: {:?}", chapter_abs_path.to_str().unwrap());
-        let chapter_dir = chapter_abs_path.parent().unwrap();
 
-        log::debug!("chapter directory: {:?}", chapter_dir.to_str().unwrap());
+        let mut new_content = String::new();
+        
 
+
+
+        log::debug!("chapter directory: {:?}", chapter_path.to_str().unwrap());
         let updated_content = replace_links(&chapter.content)?;
 
         // todo: produce warnings / errors if diagrams won't generate
@@ -184,39 +187,33 @@ impl DrawIo {
         for diagrams in updated_content.0.iter() {
             // for some reason the output is relative to the file being built???
             log::debug!("diagrams: {:?}", diagrams);
-            let diagram_path = chapter_dir.join(diagrams).clean();
-            let rel_diagram_path = relative_path(&diagram_path, &root_dir).unwrap();
-            log::debug!("Rel diagram path: {:?}", rel_diagram_path.to_str().unwrap());
-            assert!(rel_diagram_path.is_file());
-            let mut chhiter = rel_diagram_path.components().peekable();
-            // skip the src dir. 
-            chhiter.next();
-            let rel_output_dir = relative_path(".", &rel_diagram_path).unwrap();
-            log::debug!("initial output dir: {:?}", rel_output_dir);
-            let rel_output_dir = rel_output_dir.parent().unwrap();
-            let mut rel_output_dir_b = rel_output_dir.join("book");
-            while let Some(f) = chhiter.next() {
-                if chhiter.peek().is_none() {
-                    break;
-                }
-                log::debug!("@@ adding component :{:?}", f);
-                rel_output_dir_b = rel_output_dir_b.join(f);
-            }
-            log::debug!("Actual rel output: {:?}", rel_output_dir_b.to_str().unwrap());
-            let args = ["run", "-v$(pwd):/data", "rlespinasse/drawio-export",
-                        "--output",
-                        rel_output_dir_b.to_str().unwrap(),
-                        "--format", "svg", rel_diagram_path.to_str().unwrap()];
-            log::debug!("Command: {} {}", "docker", args.join(" "));
-            let output = process::Command::new("docker")
+            let diagram_path: PathBuf = absolute_path(&chapter_path).unwrap()
+                .parent().unwrap().to_path_buf();
+            log::debug!("Diagram path: {:?}", diagram_path.clean().to_str().unwrap());
+
+            //assert!(diagram_path.is_file());
+            let args = [diagram_path.to_str().unwrap(),
+                        // todo: adjust output directory based on path for where the chapter expects it. 
+                        "--output", "temp_file.svg",
+                        "--format", "svg",
+                        "--output-mode", "absolute"];
+            log::debug!("drawio-exporter.exe {}", args.join(" "));
+            
+            let output = process::Command::new("drawio-exporter.exe")
                 .args(&args)
                 .output();
             match output {
                 Ok(r) => {
-                    log::debug!("Successful conversion");
+
+                    let svg_output = std::fs::read_to_string("temp_file.svg");
+                    
+                    log::debug!("Successful conversion: {}", String::from_utf8(r.stdout).unwrap());
                 },
                 Err(f) => {
-                    log::error!("Failed to convert document: {:?}", diagrams);
+                    log::error!("Failed conversion: {:?}", f);
+                    // todo: how to return an error?????
+                    println!("purpose to make error");
+                    panic!()
                 }
             }
         }
@@ -224,6 +221,54 @@ impl DrawIo {
         Ok(updated_content.1)
     }
 }
+
+// pulls out the svg image from a draw io exported xml file. 
+fn extract_svg<P: AsRef<Path>>(drawio_svg_path: P) -> Option<String> {
+    let string = std::fs::read_to_string(drawio_svg_path).unwrap();
+    let p = string.find("<svg ").unwrap();
+    Some(string[p..].to_owned())
+}
+
+fn get_content_from_diagram<P: AsRef<Path>>(diagram_path: P) -> Result<HashMap<String, String>, &'static str> {
+    // assert diagram exists.
+
+    let temp_dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(temp_dir.path());
+    let args = [diagram_path.as_ref().to_str().unwrap(),
+                // todo: adjust output directory based on path for where the chapter expects it. 
+                "--output", temp_dir.path().to_str().unwrap(),
+                "--format", "svg",
+                "--output-mode", "absolute"];
+    log::debug!("drawio-exporter.exe {}", args.join(" "));
+
+    let mut results = HashMap::new();
+    let output = process::Command::new("drawio-exporter.exe")
+        .args(&args)
+        .output();
+    match output {
+        Ok(r) => {
+            for dir in std::fs::read_dir(temp_dir.path()).unwrap() {
+                if let Ok(e) = dir {
+                    if e.path().is_file(){
+                        let filename: String = e.path().file_name().unwrap().to_str().unwrap().to_string();
+                        results.insert(filename,
+                                       extract_svg(e.path()).unwrap());
+                    }
+                }
+            }
+            log::debug!("Successful conversion: {}", String::from_utf8(r.stdout).unwrap());
+        },
+        Err(f) => {
+            println!("Failed conversion: {:?}", f);
+            // todo: how to return an error?????
+            println!("purpose to make error");
+            panic!()
+        }
+    }    
+
+    Ok(results)
+}
+
 
 #[cfg(test)]
 mod tests {
@@ -283,10 +328,60 @@ blkafjaklfj
             
         let rel_path = RelativePathBuf::from_path("brandon").unwrap();
         let new_path = rel_path.to_path("/home/brandon");
-        println!("Rel path: {:?}", rel_path.to_string());
-        println!("New path: {:?}", new_path.to_str().unwrap());
         assert!(false);
     }
+
+    #[test]
+    fn replace_link_test() {
+        let expected_content = r#"
+hello world
+![blahalala](testdiagram-Page-1.drawio)
+blkafjaklfj
+"#;
+
+        let mut new_content = String::new();
+        let regex_v = Regex::new(r"(!\[.*\])\((.*)-(.*)(\.drawio)\)").unwrap();
+        let mut start_index = 0;
+
+        let resources_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources");
+
+        let mut diagrams = HashMap::new();
+
+        // let chapter_dir = "hello";
+        for entry in regex_v.captures_iter(expected_content) {
+            let m = entry.get(0).unwrap();
+            let md_link = entry.get(1).unwrap().as_str();
+            let diagram_name = entry.get(2).unwrap().as_str();
+            let page_name = entry.get(3).unwrap().as_str();
+            let ext_name = entry.get(4).unwrap().as_str();
+            // todo: could have this get deteremined by option 
+            let new_ext_name = ".svg";
+            // println!("leading link: {}", md_link);
+            // println!("{} {}", "name of diagram: ", diagram_name);
+            // println!("{} {}", "name of page: ", page_name);
+            // println!("{} {}", "name of extension: ", ext_name);
+            let expected_key = format!("{}-{}{}", diagram_name, page_name, new_ext_name);
+            let new_diagrams = get_content_from_diagram(resources_dir.join("testdiagram.drawio")).unwrap();
+            for (key, value) in new_diagrams.into_iter() {
+                // println!("keys: {}", key);
+                diagrams.insert(key, value);
+            }
+
+            // println!("new link {}{}", md_link,
+            //             format!("({}-{}{})", diagram_name, page_name, new_ext_name));
+
+            println!("Key {}", expected_key);
+            println!("Value: {}", diagrams.get(&expected_key).unwrap());
+
+            new_content += &expected_content[start_index..m.start()];
+            new_content += &diagrams.get(&expected_key).unwrap();
+            start_index = m.end();
+        }
+        new_content += &expected_content[start_index..];
+        println!("new content: \n{}", new_content);
+        assert!(false)
+    }
+
 
     #[test]
     fn relative_path_testing() {
