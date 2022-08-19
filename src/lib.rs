@@ -165,62 +165,59 @@ impl DrawIo {
         let chapter_path = chapter.source_path.as_ref().unwrap().to_path_buf();
         // log::debug!("Chapter path: {:?}", chapter_path.to_str().unwrap());
         // assert!(chapter_path.is_file());
-        // let chapter_dir = chapter_path.parent().unwrap();
+        let chapter_dir = PathBuf::from("src").join(chapter_path.parent().unwrap()).clean();
 
 
         let mut new_content = String::new();
-        
+        let regex_v = Regex::new(r"(!\[.*\])\((.*?)-(.*)(\.drawio)\)").unwrap();
+        let mut start_index = 0;
 
+        // keys are pages.svg, values are the svg. 
+        let mut diagrams = HashMap::new();
 
-
-        log::debug!("chapter directory: {:?}", chapter_path.to_str().unwrap());
-        let updated_content = replace_links(&chapter.content)?;
-
-        // todo: produce warnings / errors if diagrams won't generate
-        // nice links,
-        // suchas if a page has #@$! in its name, on linus
-        // the name would end up with 'diagram-#@$!' and thus not be diretly
-        // ref able. 
-
-        // docker run -v$(pwd):/data rlespinasse/drawio-export
-        // src/diagram.drawio --output . --format svg
-        for diagrams in updated_content.0.iter() {
-            // for some reason the output is relative to the file being built???
-            log::debug!("diagrams: {:?}", diagrams);
-            let diagram_path: PathBuf = absolute_path(&chapter_path).unwrap()
-                .parent().unwrap().to_path_buf();
-            log::debug!("Diagram path: {:?}", diagram_path.clean().to_str().unwrap());
-
-            //assert!(diagram_path.is_file());
-            let args = [diagram_path.to_str().unwrap(),
-                        // todo: adjust output directory based on path for where the chapter expects it. 
-                        "--output", "temp_file.svg",
-                        "--format", "svg",
-                        "--output-mode", "absolute"];
-            log::debug!("drawio-exporter.exe {}", args.join(" "));
+        for entry in regex_v.captures_iter(&chapter.content) {
+            let m = entry.get(0).unwrap();
+            log::debug!("M: {}", m.as_str());
+            let md_link = entry.get(1).unwrap().as_str();
+            let diagram_name = entry.get(2).unwrap().as_str();
+            let page_name = entry.get(3).unwrap().as_str();
+            let ext_name = entry.get(4).unwrap().as_str();
+            // todo: could have this get deteremined by option 
+            let new_ext_name = ".svg";
+            log::debug!("leading link: {}", md_link);
+            log::debug!("{} {}", "name of diagram: ", diagram_name);
+            log::debug!("{} {}", "name of page: ", page_name);
+            log::debug!("{} {}", "name of extension: ", ext_name);
+            let expected_key = format!("{}-{}{}", diagram_name, page_name, new_ext_name)[2..].to_string();
             
-            let output = process::Command::new("drawio-exporter.exe")
-                .args(&args)
-                .output();
-            match output {
-                Ok(r) => {
-
-                    let svg_output = std::fs::read_to_string("temp_file.svg");
-                    
-                    log::debug!("Successful conversion: {}", String::from_utf8(r.stdout).unwrap());
-                },
-                Err(f) => {
-                    log::error!("Failed conversion: {:?}", f);
-                    // todo: how to return an error?????
-                    println!("purpose to make error");
-                    panic!()
-                }
+            let diagram_path = format!("{}.drawio", diagram_name);
+            let new_diagrams = get_content_from_diagram(chapter_dir.join(diagram_path)).unwrap();
+            log::debug!("Converted diagrams");
+            for (key, value) in new_diagrams.into_iter() {
+                // println!("keys: {}", key);
+                log::debug!("diagrams: {}", key);
+                diagrams.insert(key, value);
             }
+
+            log::debug!("Key {}", expected_key);
+            log::debug!("Value: {}", diagrams.get(&expected_key).unwrap());
+
+            new_content += &chapter.content[start_index..m.start()];
+            new_content += &diagrams.get(&expected_key).unwrap();
+            start_index = m.end();
         }
-        log::debug!("updated content: {:?}", updated_content.1);
-        Ok(updated_content.1)
+        new_content += &chapter.content[start_index..];
+        log::debug!("new content: \n{}", new_content);
+
+        Ok(new_content)
     }
 }
+
+/// Contains the names of draw io diagrams that have been converted
+/// to avoid reconvering if a link is used multiple times. 
+struct SVGMapping {
+}
+
 
 // pulls out the svg image from a draw io exported xml file. 
 fn extract_svg<P: AsRef<Path>>(drawio_svg_path: P) -> Option<String> {
@@ -234,7 +231,9 @@ fn get_content_from_diagram<P: AsRef<Path>>(diagram_path: P) -> Result<HashMap<S
 
     let temp_dir = tempfile::tempdir().unwrap();
     std::fs::create_dir_all(temp_dir.path());
-    let args = [diagram_path.as_ref().to_str().unwrap(),
+    let p = diagram_path.as_ref().to_str().unwrap();
+    log::debug!("Converting: {}", p);
+    let args = [p,
                 // todo: adjust output directory based on path for where the chapter expects it. 
                 "--output", temp_dir.path().to_str().unwrap(),
                 "--format", "svg",
@@ -247,21 +246,30 @@ fn get_content_from_diagram<P: AsRef<Path>>(diagram_path: P) -> Result<HashMap<S
         .output();
     match output {
         Ok(r) => {
+
             for dir in std::fs::read_dir(temp_dir.path()).unwrap() {
                 if let Ok(e) = dir {
                     if e.path().is_file(){
-                        let filename: String = e.path().file_name().unwrap().to_str().unwrap().to_string();
+                        let filename: String = e.path().file_name().unwrap()
+                            .to_str().unwrap().to_string();
+
+                        log::debug!("Converted {}", filename);
                         results.insert(filename,
                                        extract_svg(e.path()).unwrap());
                     }
+                    else {
+                        log::debug!("Is not a file: {}", e.path().to_str().unwrap());
+                    }
+                } else {
+                    log::debug!("Dir not okay");
                 }
             }
             log::debug!("Successful conversion: {}", String::from_utf8(r.stdout).unwrap());
         },
         Err(f) => {
-            println!("Failed conversion: {:?}", f);
+            log::error!("Failed conversion: {:?}", f);
             // todo: how to return an error?????
-            println!("purpose to make error");
+            log::error!("purpose to make error");
             panic!()
         }
     }    
@@ -345,9 +353,8 @@ blkafjaklfj
 
         let resources_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources");
 
+        // keys are pages.svg, values are the svg. 
         let mut diagrams = HashMap::new();
-
-        // let chapter_dir = "hello";
         for entry in regex_v.captures_iter(expected_content) {
             let m = entry.get(0).unwrap();
             let md_link = entry.get(1).unwrap().as_str();
@@ -367,10 +374,7 @@ blkafjaklfj
                 diagrams.insert(key, value);
             }
 
-            // println!("new link {}{}", md_link,
-            //             format!("({}-{}{})", diagram_name, page_name, new_ext_name));
-
-            println!("Key {}", expected_key);
+            println!("Custom Key {}", &expected_key[2..]);
             println!("Value: {}", diagrams.get(&expected_key).unwrap());
 
             new_content += &expected_content[start_index..m.start()];
