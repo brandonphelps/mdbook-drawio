@@ -1,7 +1,7 @@
-use std::io;
-use clap::{Command, Arg, ArgMatches, crate_version};
+use clap::{crate_version, Arg, ArgMatches, Command};
 use mdbook::errors::Error;
 use mdbook::preprocess::{CmdPreprocessor, Preprocessor};
+use std::io;
 
 use mdbook_drawio::DrawIo;
 
@@ -34,7 +34,6 @@ fn handle_supports(sub_args: &ArgMatches) -> ! {
     }
 }
 
-
 fn handle_preprocessing() -> Result<(), Error> {
     let (ctx, book) = CmdPreprocessor::parse_input(io::stdin())?;
 
@@ -65,7 +64,6 @@ fn main() {
     }
 }
 
-
 // fn main(){
 //     env_logger::init_from_env(env_logger::Env::default().default_filter_or("info"));
 
@@ -81,7 +79,7 @@ fn main() {
 //                 "--output", ".",
 //                 "--output-mode", "absolute"];
 //     log::debug!("drawio-exporter.exe {}", args.join(" "));
-    
+
 //     let output = process::Command::new("drawio-exporter.exe")
 //         .args(&args)
 //         .output();
