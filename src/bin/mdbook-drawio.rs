@@ -25,7 +25,7 @@ fn make_app() -> clap::Command<'static> {
 
 fn handle_supports(sub_args: &ArgMatches) -> ! {
     let renderer = sub_args.value_of("renderer").expect("Required argument");
-    let supported = DrawIo.supports_renderer(renderer);
+    let supported = renderer == "html"; 
 
     if supported {
         std::process::exit(0);
@@ -46,7 +46,11 @@ fn handle_preprocessing() -> Result<(), Error> {
         );
     }
 
-    let processed_book = DrawIo.run(&ctx, book)?;
+    log::debug!("CTX ROOT: {}", ctx.root.to_str().unwrap());
+
+
+    let preprocessor = DrawIo::new(ctx.root.join(".vavhe"));
+    let processed_book = preprocessor.run(&ctx, book)?;
     serde_json::to_writer(io::stdout(), &processed_book)?;
     Ok(())
 }
@@ -63,29 +67,3 @@ fn main() {
         std::process::exit(1);
     }
 }
-
-// fn main(){
-//     env_logger::init_from_env(env_logger::Env::default().default_filter_or("info"));
-
-//     let matches = Command::new("hello")
-//         .arg(Arg::new("drawio-digram"))
-//         .arg(Arg::new("output"))
-//         .get_matches();
-
-//     let diagram_path: PathBuf = matches.value_of("drawio-digram").unwrap().into();
-//     let output_dir: PathBuf = matches.value_of("output").unwrap().into();
-
-//     let args = [diagram_path.to_str().unwrap(),
-//                 "--output", ".",
-//                 "--output-mode", "absolute"];
-//     log::debug!("drawio-exporter.exe {}", args.join(" "));
-
-//     let output = process::Command::new("drawio-exporter.exe")
-//         .args(&args)
-//         .output();
-
-//     match output {
-//         Ok(r) => { println!("Success: {:?}", r) },
-//         Err(f) => { println!("Failrue: {:?}", f) }
-//     };
-// }

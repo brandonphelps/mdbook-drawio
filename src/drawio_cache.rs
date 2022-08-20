@@ -1,4 +1,4 @@
-use super::DrawIoFile;
+use std::time::SystemTime;
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -21,6 +21,7 @@ pub struct DrawIoCache {
 impl DrawIoCache {
 
     pub fn new<P: AsRef<Path>>(root_dir: P) -> Self {
+        log::debug!("Placing cache at: {}", root_dir.as_ref().to_str().unwrap());
         Self {
             root_dir: root_dir.as_ref().into(),
         }
@@ -33,8 +34,14 @@ impl DrawIoCache {
         self.root_dir.join(path.as_ref()).join(page)
     }
 
+    pub fn get_time<P: AsRef<Path>>(&self, path: P, page: &str) -> std::io::Result<SystemTime> {
+        let d_path = self.get_diagram_cache_path(path, page);
+        std::fs::metadata(d_path).unwrap().modified()
+    }
+
     // all paths should be relative to the context of the running tool.
     pub fn get_diagram<P: AsRef<Path>>(&self, path: P, page: &str) -> Result<String, String> {
+        log::debug!("Getting diagram from {} - {}", path.as_ref().to_str().unwrap(), page);
         let d_path = self.get_diagram_cache_path(path, page);
         if d_path.is_file() {
             // load the file and return the exported contents. 
@@ -44,10 +51,18 @@ impl DrawIoCache {
         }
     }
 
+    /// removes entry from cache. 
+    pub fn clear_diagram<P: AsRef<Path>>(&self, path: P, page: &str) {
+        let d_path = self.get_diagram_cache_path(path, page);
+        if d_path.is_file() {
+            std::fs::remove_file(d_path);
+        }
+    }
+
     /// add an entry into the cache. 
     pub fn add_diagram<P: AsRef<Path>>(&self, path: P, page: &str, content: &str) -> Result<(), String> {
         let d_path = self.get_diagram_cache_path(path, page);
-        println!("{:?}", d_path.to_str().unwrap());
+        log::debug!("Adding diagram {} - {}", d_path.to_str().unwrap(), page);
         std::fs::create_dir_all(d_path.parent().unwrap());
         std::fs::write(d_path, content).unwrap();
         Ok(())

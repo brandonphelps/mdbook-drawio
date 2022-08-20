@@ -15,10 +15,18 @@ mod drawio_cache;
 
 // todo: add caching, each draw-io diagram can take awhile to render
 // so we should cache each draw-io diagram and check for modified date time.
-pub struct DrawIo;
+pub struct DrawIo {
+    // draw io cache. 
+    cache: drawio_cache::DrawIoCache,
+}
 
-// maps to a specific draw io file.
-pub struct DrawIoFile(PathBuf);
+impl DrawIo  {
+    pub fn new<P: AsRef<Path>>(path: P) -> DrawIo {
+        Self {
+            cache: drawio_cache::DrawIoCache::new(path),
+        }
+    }
+}
 
 impl Preprocessor for DrawIo {
     fn name(&self) -> &str {
@@ -35,7 +43,7 @@ impl Preprocessor for DrawIo {
             }
 
             if let BookItem::Chapter(ref mut chapter) = *item {
-                res = Some(DrawIo::add_diagram(&ctx.root, chapter).map(|md| {
+                res = Some(self.add_diagram(&ctx.root, chapter).map(|md| {
                     chapter.content = md;
                 }));
             }
@@ -48,120 +56,8 @@ impl Preprocessor for DrawIo {
     }
 }
 
-/// transforms a chapters content extracting drawio links
-/// to be exported.
-// vector of links that are to be used for exporting.
-// new content page.
-fn replace_links(content: &str) -> Result<(Vec<String>, String)> {
-    let regex_v = Regex::new(r"(!\[.*\])\((.*)-(.*)(\.drawio)\)").unwrap();
-    let mut links = vec![];
-
-    let result = regex_v.replace_all(content, |caps: &Captures| {
-        let md_link = caps.get(1).unwrap().as_str();
-        let diagram_name = caps.get(2).unwrap().as_str();
-        let page_name = caps.get(3).unwrap().as_str();
-        let ext_name = caps.get(4).unwrap().as_str();
-        // todo: could have this get deteremined by option
-        let new_ext_name = ".svg";
-        log::debug!("leading link: {}", md_link);
-        log::debug!("{} {}", "name of diagram: ", diagram_name);
-        log::debug!("{} {}", "name of page: ", page_name);
-        log::debug!("{} {}", "name of extension: ", ext_name);
-
-        log::debug!(
-            "new link {}{}",
-            md_link,
-            format!("({}-{}{})", diagram_name, page_name, new_ext_name)
-        );
-        links.push(format!("{}{}", diagram_name, ext_name));
-        format!(
-            "{}({}-{}{})",
-            md_link, diagram_name, page_name, new_ext_name
-        )
-    });
-    Ok((links, result.to_string()))
-}
-
-fn absolute_path(path: impl AsRef<Path>) -> std::io::Result<PathBuf> {
-    let path = path.as_ref();
-
-    let absolute_path = if path.is_absolute() {
-        path.to_path_buf()
-    } else {
-        std::env::current_dir()?.join(path)
-    }
-    .clean();
-    Ok(absolute_path)
-}
-
-/// Computes a relative, if possible, from path to start.
-/// this attempts to be similar in functionality to that of pythons os.path.relpath.
-fn relative_path(path: impl AsRef<Path>, start: impl AsRef<Path>) -> std::io::Result<PathBuf> {
-    let start_p = absolute_path(start)?;
-    let path_p = absolute_path(path)?;
-    let start_p_str = start_p.to_str().unwrap();
-    let path_p_str = path_p.to_str().unwrap();
-    // todo: determine if there is an os.seperator()
-    let mut start_p_split = start_p_str.split("/").peekable();
-    let mut path_p_split = path_p_str.split("/").peekable();
-
-    let mut uncommon_parts: Vec<String> = vec![];
-
-    //
-    // path: /hello/world/i/like
-    // start: /hello/world
-    // result: i/like
-
-    //
-    // path: /hello/world/
-    // start: /hello/world/i/like
-    // result: ../..
-
-    //
-    // path: /hello/world/hello/world
-    // start: /hello/world/i/like
-    // result: ../../hello/world
-
-    // seems completely uncessary to perform all this path manip stuff.
-    let mut start_n = start_p_split.next();
-    let mut path_n = path_p_split.next();
-
-    // is zip useless? how to do this functionally?
-    loop {
-        start_n = start_p_split.next();
-        path_n = path_p_split.next();
-
-        if start_n != path_n || start_n.is_none() || path_n.is_none() {
-            break;
-        }
-    }
-
-    if let Some(n) = start_n {
-        uncommon_parts.push("..".to_string());
-    }
-
-    while let Some(start_n) = start_p_split.next() {
-        uncommon_parts.push("..".to_string());
-    }
-
-    if let Some(n) = path_n {
-        uncommon_parts.push(n.to_string());
-    }
-
-    while let Some(path_n) = path_p_split.next() {
-        uncommon_parts.push(path_n.to_string());
-    }
-
-    if uncommon_parts.is_empty() {
-        uncommon_parts.push(String::from("."));
-    }
-    let result = uncommon_parts.join("/");
-    let result_path = PathBuf::from(result).clean();
-    Ok(result_path)
-}
-
 impl DrawIo {
-    fn add_diagram(root_dir: &PathBuf, chapter: &mut Chapter) -> Result<String> {
+    fn add_diagram(&self, root_dir: &PathBuf, chapter: &mut Chapter) -> Result<String> {
         // root points to the path of book.toml directory.
         log::info!("\n\nProcessing dir: {}", root_dir.to_str().unwrap());
         log::info!("Processing chapter: {}", chapter.name);
@@ -176,49 +72,67 @@ impl DrawIo {
         // to is then located at either "." or w/e the parent dir is.
 
         let chapter_path = chapter.source_path.as_ref().unwrap().to_path_buf();
-        // log::debug!("Chapter path: {:?}", chapter_path.to_str().unwrap());
-        // assert!(chapter_path.is_file());
         let chapter_dir = PathBuf::from("src")
             .join(chapter_path.parent().unwrap())
             .clean();
 
         let mut new_content = String::new();
         let regex_v = Regex::new(r"(!\[.*\])\((.*?)-(.*)(\.drawio)\)").unwrap();
+        // start index of the chapter.content.
+        // this keeps track of what content to keep,
+        // so we can replace the link. 
         let mut start_index = 0;
-
-        // keys are pages.svg, values are the svg.
-        let mut diagrams = HashMap::new();
 
         for entry in regex_v.captures_iter(&chapter.content) {
             let m = entry.get(0).unwrap();
-            log::debug!("M: {}", m.as_str());
+            // named link in the md file [....]
             let md_link = entry.get(1).unwrap().as_str();
             let diagram_name = entry.get(2).unwrap().as_str();
             let page_name = entry.get(3).unwrap().as_str();
             let ext_name = entry.get(4).unwrap().as_str();
+
             // todo: could have this get deteremined by option
             let new_ext_name = ".svg";
-            log::debug!("leading link: {}", md_link);
-            log::debug!("{} {}", "name of diagram: ", diagram_name);
-            log::debug!("{} {}", "name of page: ", page_name);
-            log::debug!("{} {}", "name of extension: ", ext_name);
             let expected_key =
                 format!("{}-{}{}", diagram_name, page_name, new_ext_name)[2..].to_string();
+            let diagram_path = chapter_dir.join(format!("{}.drawio", diagram_name));
 
-            let diagram_path = format!("{}.drawio", diagram_name);
-            let new_diagrams = get_content_from_diagram(chapter_dir.join(diagram_path)).unwrap();
-            log::debug!("Converted diagrams");
-            for (key, value) in new_diagrams.into_iter() {
-                // println!("keys: {}", key);
-                log::debug!("diagrams: {}", key);
-                diagrams.insert(key, value);
+            if !diagram_path.is_file() {
+                log::error!("Failed to find diagram: {}", diagram_path.to_str().unwrap());
+                // since the digrams path specified isn't available
+                // skip the entry. 
+                continue;
             }
 
-            log::debug!("Key {}", expected_key);
-            log::debug!("Value: {}", diagrams.get(&expected_key).unwrap());
+            let metadata = std::fs::metadata(&diagram_path).unwrap();
+
+            match metadata.modified() {
+                Ok(r) => {
+                    if r > self.cache.get_time(&diagram_path, &expected_key).unwrap() {
+                        self.cache.clear_diagram(&diagram_path, &expected_key);
+                    }
+                },
+                _ => {
+                }
+            };
+
+            let f = self.cache.get_diagram(&diagram_path, &expected_key);
+            let new_diagrams = match f {
+                Ok(r) => { r },
+                Err(f) => {
+                    let new_diagrams = get_content_from_diagram(&diagram_path).unwrap();
+                    log::debug!("Converted diagrams");
+                    for (key, value) in new_diagrams.into_iter() {
+                        log::debug!("diagrams: {}", key);
+                        self.cache.add_diagram(&diagram_path, &key, &value);
+                    }
+                    self.cache.get_diagram(&diagram_path,
+                                           &expected_key).unwrap()
+                }
+            };
 
             new_content += &chapter.content[start_index..m.start()];
-            new_content += &diagrams.get(&expected_key).unwrap();
+            new_content += &new_diagrams;
             start_index = m.end();
         }
         new_content += &chapter.content[start_index..];
@@ -304,60 +218,6 @@ mod tests {
     use std::path::PathBuf;
 
     #[test]
-    fn test_link_extraction() {
-        let content = r#"
-hello world
-![blahalala](blah-page1.drawio)
-blkafjaklfj
-"#;
-
-        let expected_content = r#"
-hello world
-![blahalala](blah-page1.svg)
-blkafjaklfj
-"#;
-
-        let new_content = replace_links(content).unwrap();
-
-        assert_eq!(new_content.0, vec!["blah.drawio"]);
-        assert_eq!(new_content.1, expected_content);
-    }
-
-    #[test]
-    fn test_link_extraction_mutli() {
-        let content = r#"
-hello world
-![blahalala](blah-page1.drawio)
-![blahalala](diagram-Woooo.drawio)
-blkafjaklfj
-"#;
-
-        let expected_content = r#"
-hello world
-![blahalala](blah-page1.svg)
-![blahalala](diagram-Woooo.svg)
-blkafjaklfj
-"#;
-
-        let new_content = replace_links(content).unwrap();
-
-        assert_eq!(new_content.0, vec!["blah.drawio", "diagram.drawio"]);
-        assert_eq!(new_content.1, expected_content);
-    }
-
-    #[test]
-    fn parent_paths() {
-        let path = PathBuf::from("./chapter.md");
-        let parent = path.parent().unwrap();
-
-        assert_eq!(parent, PathBuf::from("."));
-
-        let rel_path = RelativePathBuf::from_path("brandon").unwrap();
-        let new_path = rel_path.to_path("/home/brandon");
-        assert!(false);
-    }
-
-    #[test]
     fn replace_link_test() {
         let expected_content = r#"
 hello world
@@ -378,13 +238,8 @@ blkafjaklfj
             let md_link = entry.get(1).unwrap().as_str();
             let diagram_name = entry.get(2).unwrap().as_str();
             let page_name = entry.get(3).unwrap().as_str();
-            let ext_name = entry.get(4).unwrap().as_str();
             // todo: could have this get deteremined by option
             let new_ext_name = ".svg";
-            // println!("leading link: {}", md_link);
-            // println!("{} {}", "name of diagram: ", diagram_name);
-            // println!("{} {}", "name of page: ", page_name);
-            // println!("{} {}", "name of extension: ", ext_name);
             let expected_key = format!("{}-{}{}", diagram_name, page_name, new_ext_name);
             let new_diagrams =
                 get_content_from_diagram(resources_dir.join("testdiagram.drawio")).unwrap();
@@ -405,36 +260,5 @@ blkafjaklfj
         assert!(false)
     }
 
-    #[test]
-    fn relative_path_testing() {
-        let path = "hello/world";
-        let cur_p = "hello/world/blah/balh";
 
-        let expected_result = PathBuf::from("../../");
-        assert_eq!(relative_path(path, cur_p).unwrap(), expected_result);
-
-        let path = "hello/world/balh";
-        let cur_p = "hello/world/blah/balh";
-
-        let expected_result = PathBuf::from("../../balh");
-        assert_eq!(relative_path(path, cur_p).unwrap(), expected_result);
-
-        let path = "hello/world/balh/jojo/bizaar";
-        let cur_p = "hello/world/blah/balh";
-
-        let expected_result = PathBuf::from("../../balh/jojo/bizaar");
-        assert_eq!(relative_path(path, cur_p).unwrap(), expected_result);
-
-        let path = "hello/jojo/bizaar";
-        let cur_p = "hello/world/blah/balh";
-
-        let expected_result = PathBuf::from("../../../jojo/bizaar");
-        assert_eq!(relative_path(path, cur_p).unwrap(), expected_result);
-
-        let path = "jojo/hello";
-        let cur_p = "hello/world/blah/balh";
-
-        let expected_result = PathBuf::from("../../../../jojo/hello");
-        assert_eq!(relative_path(path, cur_p).unwrap(), expected_result);
-    }
 }
