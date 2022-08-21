@@ -104,24 +104,11 @@ impl DrawIo {
                 continue;
             }
 
-            let metadata = std::fs::metadata(&diagram_path).unwrap();
-
-            match metadata.modified() {
-                Ok(r) => {
-                    if r > self.cache.get_time(&diagram_path, &expected_key).unwrap() {
-                        self.cache.clear_diagram(&diagram_path, &expected_key);
-                    }
-                },
-                _ => {
-                }
-            };
-
             let f = self.cache.get_diagram(&diagram_path, &expected_key);
             let new_diagrams = match f {
                 Ok(r) => { r },
                 Err(f) => {
                     let new_diagrams = get_content_from_diagram(&diagram_path).unwrap();
-                    log::debug!("Converted diagrams");
                     for (key, value) in new_diagrams.into_iter() {
                         log::debug!("diagrams: {}", key);
                         self.cache.add_diagram(&diagram_path, &key, &value);

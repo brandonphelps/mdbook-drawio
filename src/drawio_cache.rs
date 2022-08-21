@@ -34,14 +34,37 @@ impl DrawIoCache {
         self.root_dir.join(path.as_ref()).join(page)
     }
 
-    pub fn get_time<P: AsRef<Path>>(&self, path: P, page: &str) -> std::io::Result<SystemTime> {
+    // None if the item does not exist. 
+    pub fn get_time<P: AsRef<Path>>(&self, path: P, page: &str) -> Option<SystemTime> {
+        
         let d_path = self.get_diagram_cache_path(path, page);
-        std::fs::metadata(d_path).unwrap().modified()
+        log::debug!("Getting metadata for: {}", d_path.to_str().unwrap());
+        match std::fs::metadata(d_path) {
+            Ok(r) => { Some(r.modified().unwrap()) },
+            _ => { None }
+        }
     }
 
     // all paths should be relative to the context of the running tool.
+    // path both specifies the draw io diagram to get, with the page being
+    // the sub entry. 
     pub fn get_diagram<P: AsRef<Path>>(&self, path: P, page: &str) -> Result<String, String> {
         log::debug!("Getting diagram from {} - {}", path.as_ref().to_str().unwrap(), page);
+
+        let metadata = std::fs::metadata(&path).unwrap();
+
+        match metadata.modified() {
+            Ok(r) => {
+                if let Some(diagram_time) = self.get_time(&path, &page) {
+                    if r > diagram_time {
+                        self.clear_diagram(&path, &page)
+                    }
+                }
+            },
+            _ => {
+            }
+        };
+
         let d_path = self.get_diagram_cache_path(path, page);
         if d_path.is_file() {
             // load the file and return the exported contents. 

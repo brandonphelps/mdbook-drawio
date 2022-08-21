@@ -49,7 +49,7 @@ fn handle_preprocessing() -> Result<(), Error> {
     log::debug!("CTX ROOT: {}", ctx.root.to_str().unwrap());
 
 
-    let preprocessor = DrawIo::new(ctx.root.join(".vavhe"));
+    let preprocessor = DrawIo::new(ctx.root.join(".drawio-cache"));
     let processed_book = preprocessor.run(&ctx, book)?;
     serde_json::to_writer(io::stdout(), &processed_book)?;
     Ok(())
