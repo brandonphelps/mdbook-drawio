@@ -28,3 +28,13 @@ This will result in the diagram found at `diagram_path` being generated into mul
 If there is an error in converting the document then the .svg will not be found and as such 
 the link in the rendered document will just look like some text or defaults back what a broken link will look like. 
 
+
+
+
+# TODOs
+
+allow user to specify if they want to use docker or not. 
+allow user to specify if when mdbook does a server to just put the links
+in, rather than generating the images. 
+since generating the images the first time a serve occurs it could take awhile for
+the server to start. 
